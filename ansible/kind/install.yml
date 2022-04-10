@@ -1,0 +1,153 @@
+---
+- name: manage docker kind network
+
+  hosts: localhost
+
+  vars_files:
+
+    - ../vars.yml
+
+  collections:
+
+    - kubernetes.core
+    - community.general
+
+  tasks:
+
+    - name: check docker_net_addr parameter
+      fail:
+        msg: docker_net_addr must be defined and set to network/prefix
+      when: docker_net_addr is not defined or not (docker_net_addr | ipaddr('network/prefix'))
+
+    - name: check operating system
+      fail:
+        msg: playbook is only supported under Linux
+      when: ansible_system != 'Linux'
+
+    - name: manage docker kind network
+      docker_network:
+        name: "{{ docker_net_name }}"
+        enable_ipv6: false
+        ipam_config:
+          - subnet: "{{ docker_net_addr }}"
+            gateway: "{{ docker_net_gateway }}"
+            iprange: "{{ docker_net_iprange }}"
+
+    - name: query kind release
+      github_release:
+        user: kubernetes-sigs
+        repo: kind
+        action: latest_release
+      register: kind_release
+
+    - block:
+
+        - name: create temporary directory
+          tempfile:
+            state: directory
+            prefix: kind
+          register: tmpdir
+          changed_when: false
+
+        - name: download kind executable
+          get_url:
+            url: "https://kind.sigs.k8s.io/dl/{{ kind_release.tag }}/kind-{{ ansible_system }}-amd64"
+            dest: "{{ tmpdir.path }}/kind"
+            mode: 0777
+          changed_when: false
+
+        - name: deploy kind cluster
+          shell: >-
+            {{ kind_bin }} get clusters | grep {{ kind_cluster_name }} || {{ kind_bin }} create cluster --config {{ playbook_dir }}/config.yml
+          vars:
+            kind_bin: "{{ tmpdir.path }}/kind"
+          changed_when: false
+
+        - name: add metallb helm repo
+          kubernetes.core.helm_repository:
+            name: metallb
+            repo_url: https://metallb.github.io/metallb
+
+        - name: deploy metallb chart
+          kubernetes.core.helm:
+            name: metallb
+            chart_ref: metallb/metallb
+            release_namespace: "{{ metallb_namespace }}"
+            create_namespace: true
+            state: present
+            wait: true
+            update_repo_cache: true
+            values:
+              configInline:
+                address-pools:
+                  - name: default
+                    protocol: layer2
+                    addresses:
+                      - "{{ metallb_net_iprange }}"
+
+        - name: add haproxy helm repo
+          kubernetes.core.helm_repository:
+            name: haproxy-ingress
+            repo_url: https://haproxy-ingress.github.io/charts
+
+        - name: deploy haproxy chart
+          kubernetes.core.helm:
+            name: haproxy-ingress
+            chart_ref: haproxy-ingress/haproxy-ingress
+            release_namespace: "{{ haproxy_namespace }}"
+            create_namespace: true
+            state: present
+            wait: true
+            update_repo_cache: true
+            values:
+              defaultBackend:
+                enabled: true
+
+        - block:
+
+            - name: add bitnami helm repo
+              kubernetes.core.helm_repository:
+                name: bitnami
+                repo_url: https://charts.bitnami.com/bitnami
+              no_log: true
+
+            - name: destroy pdns server mysql
+              kubernetes.core.helm:
+                name: pdns-mysql
+                chart_ref: bitnami/mysql
+                release_namespace: "{{ pdns_namespace }}"
+                create_namespace: true
+                state: absent
+                wait: true
+                update_repo_cache: true
+                values:
+                  auth:
+                    rootPassword: root
+                    database: "{{ pdns_db_name }}"
+                    username: "{{ pdns_db_user }}"
+                    password: "{{ pdns_db_pass }}"
+                  primary:
+                    service:
+                      type: LoadBalancer
+                  secondary:
+                    service:
+                      type: LoadBalancer
+
+            - name: destroy pdns recursor
+              kubernetes.core.k8s:
+                state: absent
+                apply: true
+                template:
+                  - path: pdns/namespace.j2.yml
+                  - path: pdns/recursor/configmap.j2.yml
+                  - path: pdns/recursor/deployment.j2.yml
+
+          tags: pdns
+
+      always:
+
+        - name: cleanup temp files
+          file:
+            state: absent
+            path: "{{ tmpdir.path }}"
+          changed_when: false

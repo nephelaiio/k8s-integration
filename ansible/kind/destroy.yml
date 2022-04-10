@@ -1,0 +1,54 @@
+---
+- name: destroy kind cluster
+
+  hosts: localhost
+
+  collections:
+
+    - community.kubernetes
+    - community.general
+
+  tasks:
+
+    - name: check operating system
+      fail:
+        msg: playbook is only supported under Linux
+      when: ansible_system != 'Linux'
+
+    - name: query kind release
+      github_release:
+        user: kubernetes-sigs
+        repo: kind
+        action: latest_release
+      register: kind_release
+
+    - block:
+
+        - name: create temporary directory
+          tempfile:
+            state: directory
+            prefix: kind
+          register: tmpdir
+          changed_when: false
+
+        - name: download kind executable
+          get_url:
+            url: "https://kind.sigs.k8s.io/dl/{{ kind_release.tag }}/kind-{{ ansible_system }}-amd64"
+            dest: "{{ tmpdir.path }}/kind"
+            mode: 0777
+          changed_when: false
+
+        - name: destroy kind cluster
+          shell: >-
+            {{ kind_bin }} delete cluster
+          vars:
+            kind_bin: "{{ tmpdir.path }}/kind"
+          changed_when: false
+
+      always:
+
+        - name: cleanup temp files
+          file:
+            state: absent
+            path: "{{ tmpdir.path }}"
+          changed_when: false

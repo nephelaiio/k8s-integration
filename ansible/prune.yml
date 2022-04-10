@@ -1,0 +1,18 @@
+---
+- name: prune docker assets
+
+  hosts: localhost
+
+  collections:
+
+    - community.docker
+
+  tasks:
+
+    - name: prune docker assets
+      community.docker.docker_prune:
+        containers: true
+        images: true
+        networks: true
+        volumes: true
+        builder_cache: true

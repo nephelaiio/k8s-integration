@@ -1,0 +1,27 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  namespace: "{{ pdns_namespace }}"
+  name: pdns-recursor
+  labels:
+    app: pdns-recursor
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: pdns-recursor
+  template:
+    metadata:
+      labels:
+        app: pdns-recursor
+    spec:
+      containers:
+        - name: pdns-recursor
+          image: powerdns/pdns-recursor-master
+          imagePullPolicy: Always
+          securityContext:
+            privileged: true
+          ports:
+            - protocol: UDP
+              containerPort: 53

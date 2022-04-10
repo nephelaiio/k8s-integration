@@ -1,0 +1,11 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  namespace: "{{ pdns_namespace }}"
+  name: pdns-recursor-config
+data:
+  PDNS_api_key: "{{ pdns_api_key }}"
+  PDNS_webserver: "true"
+  PDNS_webserver_address: "0.0.0.0"
+  PDNS_webserver_password: "{{ pdns_api_secret }}"
