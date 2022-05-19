@@ -114,6 +114,7 @@
                 state: present
                 wait: true
                 update_repo_cache: true
+                timeout: 10m
 
           tags: storage
 
@@ -125,7 +126,38 @@
                   kind: Namespace
                   apiVersion: v1
                   metadata:
-                    name: bind
+                    name: "{{ bind9_namespace }}"
+
+            - name: create bind configmap
+              k8s:
+                definition:
+                  kind: ConfigMap
+                  apiVersion: v1
+                  metadata:
+                    name: bind9-config
+                    namespace: "{{ bind9_namespace }}"
+                  data:
+                    named: |
+                      RESOLVCONF=no
+                      OPTIONS="-u bind -4"
+
+                    named.conf: |
+                      options {
+                        directory "/var/cache/bind";
+
+                        forwarders {
+                          1.2.3.4;
+                          5.6.7.8;
+                        };
+
+                        dnssec-enable no;
+                        filter-aaa-on-v4 yes;
+                      };
+
+            - debug:
+                msg:
+                  - mount configmap as subpath
+                  - deploy stakater
 
             - name: create bind deployment
               k8s:
@@ -134,7 +166,7 @@
                   kind: Deployment
                   metadata:
                     name: bind9-deployment
-                    namespace: bind
+                    namespace: "{{ bind9_namespace }}"
                   spec:
                     replicas: 1
                     selector:
@@ -159,22 +191,22 @@
                 definition:
                   apiVersion: v1
                   kind: Service
-                  type: LoadBalancer
                   metadata:
                     name: bind9-service
-                    namespace: bind
+                    namespace: "{{ bind9_namespace }}"
                     labels:
                       app: bind9
                   spec:
+                    type: LoadBalancer
                     selector:
                       app: bind9
                     ports:
                       - protocol: TCP
-                        port: 5353
+                        port: 53
                         targetPort: 53
                         name: bind9-tcp
                       - protocol: UDP
-                        port: 5353
+                        port: 53
                         targetPort: 53
                         name: bind9
 

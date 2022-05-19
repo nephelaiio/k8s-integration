@@ -11,14 +11,8 @@ compose_db_pass: secret
 compose_pdns_secret: secret
 compose_pdns_password: secret
 
-pdns_namespace: pdns
-pdns_db_user: pdns
-pdns_db_pass: secret
-pdns_db_name: pdns
-pdns_api_key: pdns
-pdns_api_secret: secret
-
 metallb_namespace: metallb-system
 metallb_net_iprange: "{{ docker_net_addr | ansible.netcommon.ipsubnet(docker_net_prefix | int + 1, -1) }}"
 
 haproxy_namespace: haproxy-system
+bind9_namespace: bind9
